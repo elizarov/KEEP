@@ -1,6 +1,7 @@
 # Kotlin serialization compiler plugin
 
 * **Type**: Design proposal
+* **Authors**: Roman Elizarov, Leonid Startsev, Vsevolod Tolstopyatov
 * **Status**: Submitted
 * **Prototype**: Partially implemented, shipped separately
 
