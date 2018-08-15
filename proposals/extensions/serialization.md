@@ -150,10 +150,6 @@ interface Encoder {
     fun encodeChar(value: Char)
     fun encodeString(value: String)
 
-    // although we don't classify enums as primitives in terms of kinds,
-    // this function is provided as a shorthand.
-    fun <E : Enum<E>> encodeEnum(value: E, enumDescriptor: SerialDescriptor)
-
     // can be defined as extension
     fun <T : Any?> encodeSerializable(strategy: SerializationStrategy<T>, value: T) {
         strategy.serialize(this, value)
@@ -191,8 +187,6 @@ interface CompositeEncoder {
     fun encodeCharElement(desc: SerialDescriptor, index: Int, value: Char)
     fun encodeStringElement(desc: SerialDescriptor, index: Int, value: String)
 
-    fun <E : Enum<E>> encodeEnumElement(desc: SerialDescriptor, index: Int, value: E, enumDescriptor: SerialDescriptor)
-
     fun <T> encodeSerializableElement(desc: SerialDescriptor, index: Int, strategy: SerializationStrategy<T>, value: T)
 }
 ```
@@ -220,10 +214,6 @@ interface Decoder {
     fun decodeDouble(): Double
     fun decodeChar(): Char
     fun decodeString(): String
-
-    // because there is no non-reflective version of `valueOf`, decoder
-    // is asked for a particular index of enum instance
-    fun <T : Enum<T>> decodeEnum(enumDescriptor: SerialDescriptor): Int
 
     // can be defined as extension
     fun <T : Any?> decodeSerializable(strategy: DeserializationStrategy<T>): T = strategy.deserialize(this)
@@ -281,8 +271,6 @@ interface CompositeDecoder {
     fun decodeCharElement(desc: SerialDescriptor, index: Int): Char
     fun decodeStringElement(desc: SerialDescriptor, index: Int): String
 
-    fun <T : Enum<T>> decodeEnumElement(desc: SerialDescriptor, index: Int, enumDescriptor: SerialDescriptor): Int
-
     // [wasRead] is analogue to [decodeElementAgain] passed here so fast decoders
     // won't have to save it in state variable
     fun <T : Any?> decodeSerializableElement(desc: SerialDescriptor, index: Int, strategy: DeserializationStrategy<T>, oldValue: T?, wasRead: Boolean): T
@@ -319,11 +307,13 @@ User should be able to provide custom implementation for `serialize` and `deseri
 
 ### Layout for unions
 
-For unions, plugin would do the same thing, except bodies of `serialize` and `deserialize` methods: only one `encodeSerializableElement` method is called. Index argument represents which particular instance is being serialized, and serializer for that instance is passed. _sealed classes_ serialization from this point of view is straightforward. _Objects_ can be represented as union which always have instance no. 0. 
+For unions, plugin would do the same thing, except bodies of `serialize` and `deserialize` methods: only one `encodeSerializableElement` method is called. Index argument represents which particular instance is being serialized, and serializer for that instance is passed.
+_Sealed classes_ serialization from this point of view is straightforward.
+_Objects_ can be represented as union which always have instance no. 0. 
 
-_Enums_ are serializable by default and are written using shorthand functions for performance sake. By default, no special serializers are generated for them; however, if some specific metadata have to be recorded (e.g. special serial name for one of enum's instances), plugin is forced to generate corresponding serializer, which calls single `encodeEnumValue`.
+_Enums_ are represented same as sealed classes with body `Unit` — `encodeUnitElement` is called instead of encodeSerializable. By default, common singleton serializer is used for them; however, if some specific metadata have to be recorded (e.g. special serial name for one of enum's instances), plugin is forced to generate corresponding serializer.
 
-_Polymorphic_ serialization (which kicks in if serializable class is `open`) resolve types at runtime; therefore, indices and serializers for it as union are built using registry. Consult library documentation for its usage.
+_Polymorphic_ serialization resolve types at runtime; therefore, indices and serializers for it as union are built using registry. See below for more information.
 
 ### Resolving and lookup
 
@@ -348,7 +338,7 @@ However, it is strongly discouraged to make user additions to this package.
 ### Auto-discovering user-defined external serializers
 
 To give compiler plugin a hint about external serializer, annotation `@Serializable(with: KClass<*>)` can be applied on property. However, it can be boilerplate-ish to annotate every property if you have a big number of domain classes which have to use, e.g. external serializer for `java.util.Date`.
-For this purpose, annotation `@Serializers(vararg s: KSerializer<*>)` was introduced. It can be applied to a class or even to a file and adds given serializers to the scope of compiler plugin.
+For this purpose, annotation `@Serializers(vararg s: Serializer<*>)` was introduced. It can be applied to a class or even to a file and adds given serializers to the scope of compiler plugin.
 
 ### Tuning generated code
 
@@ -426,7 +416,7 @@ abstract class BaseResponse()
 ```
 
 In this example both `request` and `response` in `Message` are serializable with `PolymorphicSerializer` due to annotation on them; `BaseRequest` and `BaseResponse` became _basePolyType_ s. (they are not required to be serializable by themselves).
-Yet `PolymorphicSerializer` for `request` should only contain mappings to `RequestA` and `RequestB` serializers, and none of response's serializers. This is achieved through special form of `registerPolymorphicSerializer` function, which accepts two kClasses: `registerPolymorphicSerializer(basePolyType: KClass, concreteClass: KClass, serializer: KSerializer = concreteClass.serializer())`.
+Yet `PolymorphicSerializer` for `request` should only contain mappings to `RequestA` and `RequestB` serializers, and none of response's serializers. This is achieved through special form of `registerPolymorphicSerializer` function, which accepts two kClasses: `registerPolymorphicSerializer(basePolyType: KClass, concreteClass: KClass, serializer: Serializer = concreteClass.serializer())`.
 
 For details about registering and usage of pre-defined _modules_, consult library's documentation.
 
@@ -438,7 +428,7 @@ For details about registering and usage of pre-defined _modules_, consult librar
 * Should `@Optional` annotation be applied automatically when property has default value? [#19](https://github.com/Kotlin/kotlinx.serialization/issues/19)
 * Should primitive arrays (ByteArray etc) be treated specially by plugin or should it be burden of format implementation to handle them? [#52](https://github.com/Kotlin/kotlinx.serialization/issues/52)
 * How to support different class name representations for different formats in polymorphism? [#168](https://github.com/Kotlin/kotlinx.serialization/issues/168)
-* Should polymorphic serializer omit class name in trivial cases (primitives)? [#40](https://github.com/Kotlin/kotlinx.serialization/issues/40)
+* Should polymorphic serializer omit class name in trivial cases (primitives) and how to implement this? [#40](https://github.com/Kotlin/kotlinx.serialization/issues/40)
 
 ## Future work
 
