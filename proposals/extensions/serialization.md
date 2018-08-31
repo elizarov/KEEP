@@ -5,50 +5,50 @@
 * **Status**: Submitted
 * **Prototype**: Partially implemented, shipped separately
 
-## Feeback
+## Feedback
 
-Original proposal and its discussion are held in this [forum thread](https://discuss.kotlinlang.org/t/kotlin-serialization/2063).
+The original proposal and its discussion are available in this [forum thread](https://discuss.kotlinlang.org/t/kotlin-serialization/2063).
 A lot of feedback is gathered in the repository [issues](https://github.com/Kotlin/kotlinx.serialization/issues?q=is:issue+label:design+).
 
 ## Synopsis
 
-Kotlin, starting from 1.2, offers support for multiplatform projects, and there is a need in multiplatform library for serialization.
-Since reflection is not available in common code, auto-generated code can help to reduce big amount of boilerplate which users need to write to serialize and deserialize classes.
+Kotlin 1.2 and later offers support for multiplatform projects, which creates a need for a multiplatform library for serialization.
+Since reflection is not available in the common code, auto-generated code can help to reduce the amount of boilerplate users need to write to serialize and deserialize classes.
 
-This proposal describes how compiler plugin can be used for this task, and offers a convention between compiler and runtime library [kotlinx.serialziation](https://github.com/Kotlin/kotlinx.serialization/). It consists of three parts: first briefly describes kotlinx.serialization framework, introduces core concepts and interfaces. Second covers code generation by plugin in details. Third reveals approaches to most common use-cases.
+This proposal describes how a compiler plugin can be used for this task, and offers a convention between the compiler and runtime library [kotlinx.serialziation](https://github.com/Kotlin/kotlinx.serialization/). It consists of three parts: first, it briefly describes the kotlinx.serialization framework, and introduces the core concepts and interfaces. Second, it covers code generation by the plugin in detail. Third, it reveals the approaches to solve the most common use-cases.
 
 ## Problems this proposal tries to solve
 
-1. Platform serialization mechanisms not always work well with Kotlin: [KT-7939](https://youtrack.jetbrains.com/issue/KT-7939), [KT-23998](https://youtrack.jetbrains.com/issue/KT-23998)
-1. Reflection API is not available in Kotlin/JS and Kotlin/Native, so it is impossible to use only runtime-based solution.
+1. Platform serialization mechanisms don’t always work well with Kotlin: [KT-7939](https://youtrack.jetbrains.com/issue/KT-7939), [KT-23998](https://youtrack.jetbrains.com/issue/KT-23998)
+1. Reflection API is not available in Kotlin/JS and Kotlin/Native, so it is impossible to use only a runtime-based solution.
 1. Kapt is not supported by Kotlin/JS and Kotlin/Native, so it is impossible to use annotation processing.
-1. Side code generators does not work well with incremental compilation and it is non-trivial to include them as build phase.
+1. Side code generators do not work well with incremental compilation and it is non-trivial to include them as a build phase.
 1. kotlinx.serialization alone requires a lot of boilerplate code.
 
-## Explicit goals of serialization framework
+## Explicit goals of the serialization framework
 * Provide single abstraction over various serialization formats.
-* Eliminate usage of reflection to be available on all Kotlin target platforms.
-* Work with speed comparable or bigger than traditional reflection-based solutions.
-* Provide mechanism for saving both class and its schema. Latter could be automatically generated from class' Kotlin source code.
-* Leverage other usages of the ability to traverse class data, like hashers, ORM, or lenses.
+* Eliminate usage of reflection for all Kotlin target platforms.
+* Work with speeds comparable to or better than traditional reflection-based solutions.
+* Provide a mechanism for saving both a class and its schema. A schema could be automatically generated from a class' Kotlin source code.
+* Leverage other usages of the ability to traverse class data: hashers, ORM, or lenses.
 
 ## Core API overview and mental model
 
-At a glance, kotlinx.serialziation tries to provide abstraction over different serialization formats by exposing API which can encode primitive types one-by-one. Compiler plugin can make proper usage of this API, since it knows everything about which fields a class consists of. In somewhat, this plugin could be equivalent to [parcelize plugin](android-parcelable.md), but for bigger API.
+At a glance, kotlinx.serialization tries to provide abstraction over different serialization formats by exposing the API which can encode primitive types one-by-one. A compiler plugin can make proper use of this API since it knows everything about which fields a class consists of. In theory, this plugin could be equivalent to [parcelize plugin](android-parcelable.md), but for bigger API.
 
-To support all use cases presented in corresponding section above, we make clear distinction between **serialization** process and **encoding** process. Here's our glossary:
+To support all the use cases presented in the corresponding section above, we make a clear distinction between the **serialization** process and the **encoding** process. Here are our definitions:
 
-* **Serialization** is a process of transforming one single entity to a stream of its elements. Each element is either a primitive or a complex entity, latter is transformed recursively. In the end, serializer emits a stream of primitive elements.
+* **Serialization** is a process of transforming one single entity to a stream of its elements. Each element is either a primitive or a complex entity; the latter is transformed recursively. In the end, a serializer emits a stream of primitive elements.
 
-* **Encoding** is a processing of elements stream. In contrary to traditional definition of serialization, we don't say that encoder must write elements to some storage. It could do this (e.g. JSON encoder saves elements to string and encapsulates all knowledge about char encoding, delimiters, etc...), but it also could process stream in-memory to transform or aggregate elements.
+* **Encoding** is a processing of elements in a stream. Contrary to the traditional definition of serialization, we don't say that the encoder must write the elements to storage. It could do so (e.g. the JSON encoder saves elements to a string and encapsulates all the knowledge about char encoding, delimiters, etc...), but it also could process the stream in-memory to transform or aggregate the elements.
 
-> Inverse processes are called **deserialization** and **decoding** correspondingly.
+> Inverse processes are called **deserialization** and **decoding**, respectively.
 
-> Source code of API given here is not full and contains only declarations which need to be stable and discoverable by code generator. Other parts of library and additional interfaces methods are not connected with plugin and therefore are not included here.
+> The source code of the API given here is not full and contains only declarations which need to be stable and discoverable by the code generator. Other parts of the library and additional interfaces' methods are not connected with the plugin and therefore are not included here.
 
 ### Serializer interfaces
 
-Following interfaces are provided in the library to be implemented by serializer of particular class:
+The following interfaces are provided in the library to be implemented by the serializer of a particular class:
 
 ```kotlin
 interface SerializationStrategy<in T> {
@@ -66,13 +66,13 @@ interface Serializer<T>: SerializationStrategy<T>, DeserializationStrategy<T> {
 }
 ```
 
-`Serializer<T>` is an entity that knows how to decompose class `T` and feed its primitives to some encoding/saving mechanism, and vice versa. Its implementation usually generated by compiler plugin, but can be written by user in some special cases. Note, that it should not know anything about output or storage format.
+`Serializer<T>` is an entity that knows how to decompose the class `T` and feed its primitives to some encoding/saving mechanism, and vice versa. Its implementation is usually generated by the compiler plugin, but it can be written by the user in some special cases. Note, that it should not know anything about the output or storage format.
 
-> In documentation for this framework, we are using words "serializer" and "serialization" widely. Please pay special attention that under this words, in most of cases, we assume capable entity or process of both serialization (saving, decomposing) and deserialization (loading, composing) – just because there is no good word for "both serialization and deserialization same time".
+> In the documentation for this framework, we are using the words "serializer" and "serialization" widely. Please pay special attention that, in most cases, these terms refer to a capable entity or a process of both serialization (saving, decomposing) and deserialization (loading, composing) – just because there is no good word for "both serialization and deserialization at the same time".
 
-### Descriptor of serializable entity
+### Descriptor of a serializable entity
 
-Because reflection can't be used in this library, there is a need for some data structure sufficient to hold simple metadata about serializable class – to be able to retrieve information needed for saving both class and its schema, e.g. class name, properties names and types and so on. Interface for this data structure is provided by the library and called `SerialDescriptor`. It _describes_ **serializable entity**, or just **entity**, which has **elements**. 
+Because reflection can't be used in this library, there is a need for a data structure sufficient to hold simple metadata about the serializable class – to be able to retrieve the information needed for saving both the class and its schema, e.g. class name, properties names and types and so on. The interface for this data structure is provided by the library and called `SerialDescriptor`. It _describes_ **serializable entity**, or just **entity**, which has **elements**. 
 
 ```kotlin
 interface SerialDescriptor {
@@ -94,11 +94,11 @@ interface SerialDescriptor {
 }
 ```
 
-Corresponding documentation and usage of the interface are out of scope of this document; it is presented here to introduce general concept of serializable entity metadata. This interface can (and should) also be implemented by compiler plugin for given class, because `Serializer<T>` has reference on `SerialDescriptor`.
+The corresponding documentation and the usage of the interface are out of the scope of this document; the interface itself is presented here to introduce the general concept of serializable entity metadata. This interface can (and should) also be implemented by the compiler plugin for a given class, because `Serializer<T>` has a reference on `SerialDescriptor`.
 
 #### Serial kinds
 
-Note, that we specially don't limit ourselves to "class and properties" terminology, because not only classes can be described with this data structure. `SerialKind` can give a clue on which kinds of entities can be serialized:
+Note that we especially don't limit ourselves to "class and properties" terminology, because it is not only classes that can be described with this data structure. `SerialKind` can give a clue of which kinds of entities can be serialized:
 
 ```kotlin
 sealed class SerialKind
@@ -123,16 +123,16 @@ sealed class UnionKind: SerialKind() {
 }
 ```
 
-Under union here, we assume **tagged union**, also known as **sum type**. Its elements are its **cases**, and current element is the currently tagged case.
-Although we called one of kinds `SEALED`, this kind is applicable not only to Kotlin's `sealed` classes; any bounded polymorphism (where all inheritors are known in advance, at compile-time) can be expressed via special annotation on union base class.
-Open polymorphism, expressed by `POLYMORPHIC`, requires runtime registration of all known subtypes and discussed later in this document.
-Difference between `ENUM` and `OBJECT` is motivated by the fact that even if enum consists of one case (and therefore is practically an object), during program evolution, it can get more cases.
+Here, union stands for **tagged union**, also known as **sum type**. Its elements are its **cases**, and the current element is the currently tagged case.
+Although we called one kind `SEALED`, this kind is applicable not only to Kotlin's `sealed` classes; any bounded polymorphism (where all inheritors are known in advance, at compile-time) can be expressed via a special annotation on the union base class.
+Open polymorphism, expressed as `POLYMORPHIC`, requires runtime registration of all known subtypes and is discussed later in this document.
+The difference between `ENUM` and `OBJECT` is motivated by the fact that even if enum consists of one case (and therefore is practically an object), it can get more cases as the program evolves.
 
-Detailed invariants of `SerialDescriptor` for each kind will be described in kind's documentation. Entities which does not have primitive kind we would call **composite**.
+Detailed invariants of `SerialDescriptor` for each particular kind will be described in their respective documentation. Entities which do not have a primitive kind will be called **composite**.
 
 ### Encoder interfaces
 
-Encoder encapsulates knowledge about output format and storage. This interface is provided by serialization format in runtime and should be used by serializer. For performance and type-safe reasons, encoder interface contains one method for each primitive type:
+The encoder encapsulates the knowledge about the output format and storage. This interface is provided by a serialization format in the runtime and should be used by the serializer. For performance and type-safety reasons, the encoder interface contains one method for each primitive type:
 
 ```kotlin
 interface Encoder {
@@ -157,8 +157,8 @@ interface Encoder {
 }
 ```
 
-However, this interface is not able to write composite data like classes, collections or unions, because there is no way to express delimiters and metadata about entity itself. 
-`CompositeEncoder` serves this purpose. It has similar to `Encoder` interface with methods which accept serializable descriptor and current position in structure or case in union. Note that it does not extend `Encoder` because once you've started to write structure, you're not allowed to write primitive values without indices.
+However, this interface is not able to write composite data like classes, collections, or unions, because there is no way to express delimiters and metadata about the entity itself. 
+`CompositeEncoder` serves this purpose. It has a similar interface to `Encoder` with methods that accept a descriptor and the current position in a structure or case in a union. Note that it does not extend `Encoder` because once you've started to write the structure, you're not allowed to write primitive values without indices.
 
 ```kotlin
 interface Encoder {
@@ -171,8 +171,8 @@ interface CompositeEncoder {
     fun endEncodeComposite(desc: SerialDescriptor)
 
     /** 
-     * Invoked if element equals to its default value, 
-     * giving a possibility to omit it in output stream
+     * Invoked if an element equals its default value, 
+     * making it possible to omit it in the output stream
      */
     fun shouldEncodeElementDefault(desc: SerialDescriptor, index: Int): Boolean
 
@@ -193,13 +193,13 @@ interface CompositeEncoder {
 
 ### Decoder interfaces
 
-Decoder, as encoder, encapsulates knowledge about format, and
-provides primitive values when deserializer asks for them. 
-`Decoder` interface will be precisely the opposite of `Encoder`:
+Decoder, like encoder, encapsulates the knowledge about a format, and
+provides the primitive values when the deserializer asks for them. 
+The `Decoder` interface will be precisely the opposite of `Encoder`:
 
 ```kotlin
 interface Decoder {
-    // returns true if the following value is not null, false if not null
+    // returns true if the following value is not null, false if null
     fun decodeNotNullMark(): Boolean
     // consumes null, returns null, will be called when decodeNotNullMark() is false
     fun decodeNull(): Nothing?
@@ -220,7 +220,7 @@ interface Decoder {
 }
 ```
 
-However, an opposite interface for `ElementEncoder` would not be very useful. Primitives in read stream can go in arbitrary order, and besides opposite to `encodeXxxElement` methods there is a `decodeElementIndex` method, which should be called to determine current position in structure.
+However, an opposite interface for `ElementEncoder` would not be very useful. Primitives in the input stream can go in an arbitrary order, so in addition to methods opposite to `encodeXxxElement`, there is a `decodeElementIndex` method, which should be called to determine the current position in the structure.
 
 ```kotlin
 interface Decoder {
@@ -234,7 +234,7 @@ interface CompositeDecoder {
     companion object {
         // end of input
         const val READ_DONE = -1
-        // decoder sure that elements go in order, no need to call decodeElementIndex
+        // the decoder is sure that elements go in order, no need to call decodeElementIndex
         const val READ_ALL = -2
     }
 
@@ -244,7 +244,7 @@ interface CompositeDecoder {
     /**
      * Optional method to specify collection size to pre-allocate memory,
      * called in the beginning of collection reading.
-     * If decoder specifies stream reading ([READ_ALL] is returned from [decodeElementIndex]), then
+     * If the decoder specifies in-order reading ([READ_ALL] is returned from [decodeElementIndex]), then
      * correct implementation of this method is mandatory.
      *
      * @return Collection size or -1 if not available.
@@ -252,11 +252,11 @@ interface CompositeDecoder {
     fun decodeCollectionSize(desc: SerialDescriptor): Int = -1
 
     /**
-     * This method is called when [decodeElementIndex] returns index which was 
+     * This method is called when [decodeElementIndex] returns the index which was 
      * already encountered during deserialization of this class. 
      *
      * @throws [UpdateNotSupportedException] if this implementation 
-     *                                       doesn't allow fields duplicating.
+     *                                       doesn't allow duplication of fields.
      */
     fun decodeElementAgain(desc: SerialDescriptor, index: Int): Unit
 
@@ -271,8 +271,8 @@ interface CompositeDecoder {
     fun decodeCharElement(desc: SerialDescriptor, index: Int): Char
     fun decodeStringElement(desc: SerialDescriptor, index: Int): String
 
-    // [wasRead] is analogue to [decodeElementAgain] passed here so fast decoders
-    // won't have to save it in state variable
+    // [wasRead] is analogous to [decodeElementAgain] passed here, so fast decoders
+    // won't have to save it in a state variable
     fun <T : Any?> decodeSerializableElement(desc: SerialDescriptor, index: Int, strategy: DeserializationStrategy<T>, oldValue: T?, wasRead: Boolean): T
 }
 ```
@@ -281,124 +281,123 @@ interface CompositeDecoder {
 
 ### Requirements
 
-First, let's narrow the scope for now and say that only class or object can be serializable, not interface or annotation.
+First, let's narrow down the scope for now and say that only a class or object can be serializable, not an interface or annotation.
 
-If compiler plugin has complete control over the class, then it can automatically implement `Serializer<T>` for class `T` if its every primary constructor parameter is `val` or `var` – since parameters which are not properties are impossible to save for restoring later. In this case (we called it **internal** serialization), plugin injects special synthetic constructor into the class to be able to correctly initialize its private and/or body properties. Delegated properties are not supported (they can be safely excluded from the process).
+If the compiler plugin has complete control over the class, then it can automatically implement `Serializer<T>` for class `T` if its every primary constructor parameter is `val` or `var` – since parameters that are not properties are impossible to save for restoring later. In this case (we call it **internal** serialization), the plugin injects a special synthetic constructor into the class to be able to correctly initialize its private and/or body properties. Delegated properties are not supported (they can be safely excluded from the process).
 
-If plugin was asked to generate `Serializer<T>` without modifying `T` (**external** serialization), then class `T` must have accessible primary constructor. Following properties would be impossible to initialize correctly after deserialization and therefore they are skipped:
+If the plugin was asked to generate `Serializer<T>` without modifying `T` (**external** serialization), then the class `T` must have an accessible primary constructor. The following properties would be impossible to initialize correctly after deserialization and therefore they are skipped:
 
-- private/protected body vals and vars (internal too if `T` located in other module)
+- private/protected body vals and vars (internal too if `T` is located in another module)
 - public body vals
 
 ### Layout of synthetic classes and methods for structures
 
-In case of internal serialization, which is expressed by `@Serializable` annotation on class `T`, compiler plugin should generate:
+In the case of internal serialization, which is expressed by a `@Serializable` annotation on class `T`, the compiler plugin should generate:
 
-1. Synthetic constructor for `T` which initializes all state properties including private and body ones.
-1. Nested class with special name `$serializer` which implements `Serializer<T>`. If `T` has no type arguments, this class would be a singleton. If it has, e.g. `T = T<T0, T1...>` then its constructor will have properties `Serializer<T0>, Serializer<T1>, ...`.
-5. Implementation property `$serializer.descriptor` which holds metadata about class.
-2. Method `T.Companion.serializer()` which returns `$serializer`. If `T` has type arguments (`T = T<T0, T1...>`) then this method will have arguments `Serializer<T0>, Serializer<T1>, ...`. If companion is not declared on class, its default body also will be generated.
-3. Implementation method `$serializer.serialize(Encoder, T)` which feeds T into Encoder by making consequent calls to `beginStructure`, `encodeXxxElement` several times, `endStructure`.
-4. Implementation method `$serializer.deserialize(Decoder, T?): T` which collects variables from Decoder by making calls to `beginStructure`, `decodeElementIndex`, `decodeXxxElement` with correct index until end of input, `endStructure`. Then it validates that either all primitives were read or oldValue presents to get them from there, and constructs T from collected primitives.
+1. A synthetic constructor for `T`, which initializes all the state properties including private and body ones.
+2. A nested class with a special name `$serializer`, which implements `Serializer<T>`. If `T` has no type arguments, this class will be a singleton. If it does, e.g. `T = T<T0, T1...>`, then its constructor will have the properties `Serializer<T0>, Serializer<T1>, ...`.
+3. The implementation property `$serializer.descriptor`, which holds the metadata about the class.
+4. The method `T.Companion.serializer()`, which returns `$serializer`. If `T` has type arguments (`T = T<T0, T1...>`), then this method will have arguments `Serializer<T0>, Serializer<T1>, ...`. If a companion is not declared in the class, its default body also will be generated.
+5. The implementation method `$serializer.serialize(Encoder, T)`, which feeds T into `Encoder` by making consequent calls to `beginStructure`, `encodeXxxElement` several times, and `endStructure`.
+6. The implementation method `$serializer.deserialize(Decoder, T?): T`, which collects variables from `Decoder` by making calls to `beginStructure`, `decodeElementIndex`, `decodeXxxElement` with the correct index until end of input, and `endStructure`. Then it validates that either all primitives were read or the oldValue was provided earlier to get them from old value and constructs T from the collected primitives.
 
-In case of external serialization, expressed by `@ExternalSerializer(forClass=...)` only last three items are done. In `deserialize`, plugin calls primary constructor of class and then all available property setters.
+In the case of external serialization, expressed by `@ExternalSerializer(forClass=...)`, only the last three items are done. In `deserialize`, the plugin calls a primary constructor of the class and then all the available property setters.
 
-User should be able to provide custom implementation for `serialize` and `deserialize` just by writing functions with proper signature by hand, in this case compiler plugin will skip corresponding steps.
+A user should be able to provide a custom implementation for `serialize` and `deserialize` just by manually writing functions with proper signatures. In this case, the compiler plugin will skip the corresponding steps.
 
 ### Layout for unions
 
-For unions, plugin would do the same thing, except bodies of `serialize` and `deserialize` methods: only one `encodeSerializableElement` method is called. Index argument represents which particular instance is being serialized, and serializer for that instance is passed.
+For unions, the plugin does the same thing, except the bodies of `serialize` and `deserialize` methods: only one `encodeSerializableElement` method is called. The index argument represents which particular instance is being serialized, and the serializer for that instance is passed.
 _Sealed classes_ serialization from this point of view is straightforward.
-_Objects_ can be represented as union which always have instance no. 0. 
+_Objects_ can be represented as unions which always have an instance no. 0. 
 
-_Enums_ are represented same as sealed classes with body `Unit` — `encodeUnitElement` is called instead of encodeSerializable. By default, common singleton serializer is used for them; however, if some specific metadata have to be recorded (e.g. special serial name for one of enum's instances), plugin is forced to generate corresponding serializer.
+_Enums_ are represented as sealed classes with a `Unit` body  — `encodeUnitElement` is called instead of encodeSerializable. By default, the common singleton serializer is used for them; however, if some specific metadata has to be recorded (e.g. a special serial name for one of the enum's instances), the plugin is forced to generate the corresponding serializer.
 
-_Polymorphic_ serialization resolve types at runtime; therefore, indices and serializers for it as union are built using registry. See below for more information.
+_Polymorphic_ serialization resolves the types at runtime; therefore, the indices and serializers for it as a union are built using a registry. See below for more information.
 
 ### Resolving and lookup
 
-During generation of implementation methods, compiler plugin needs to chose concrete method to call from group of `(en|de)codeXxxElement`. If current property has primitive non-nullable type, like `Int` or `String`, then it is possible to call matched by signature method directly. If it has nullable and/or complex `E`, compiler plugin uses following rules to find serializer for `E` and then call `(en|de)codeSerializableElement`:
+While generating the implementation methods, the compiler plugin needs to choose a concrete method to call from the group of `(en|de)codeXxxElement`. If the current property has a primitive non-nullable type, such as `Int` or `String`, then it is possible to directly call a method matched by the signature. If it has nullable and/or complex `E`, the compiler plugin uses the following rules to find a serializer for `E` and then call `(en|de)codeSerializableElement`:
 
-1. If current property annotated with `@Serializable(with=T::class)`, construct and use instance of `T` as serializer for `E`.
-1. If `E` is a type parameter, use corresponding serializer passed in constructor.
-1. If `E` is a primitive type (boxed for some reason), use corresponding pre-defined serializer from runtime library.
-2. If `E = V?` – nullable type, find serializer for `V` and adapt it with `NullableSerializer` from runtime library.
-1. If `E` is on of supported types from standard library, then find serializer for its generic arguments and construct corresponding serializer from runtime library.
-1. If `E` is a user type annotated with `@Serializable`, construct and use its `$serializer`.
-1. If `E` is a user type annotated with `@Serializable(with=T::class)`, construct and use instance of `T` as serializer.
-1. If none of the previous rules apply, report a compile-time error about unserializable field in class.
+1. If a current property is annotated with `@Serializable(with=T::class)`, construct and use an instance of `T` as a serializer for `E`.
+2. If `E` is a type parameter, use the corresponding serializer passed in the constructor.
+3. If `E` is a primitive type (boxed for some reason), use the corresponding pre-defined serializer from the runtime library.
+4. If `E = V?` – nullable type, find a serializer for `V` and adapt it with `NullableSerializer` from the runtime library.
+5. If `E` is one of the supported types from the standard library, then find a serializer for its generic arguments and construct the corresponding serializer from the runtime library.
+6. If `E` is a user type annotated with `@Serializable`, construct and use its `$serializer`.
+7. If `E` is a user type annotated with `@Serializable(with=T::class)`, construct and use an instance of `T` as a serializer.
+8. If none of the previous rules apply, report a compile-time error about an unserializable field in the class.
 
-### Auto-discovering serializers for standard library types
+### Auto-discovering serializers for the standard library types
 
-Serializers located at `kotlinx.serialization.builtins` package can be automatically
-discovered by plugin, when there are no ambiguity – for given `T`, there is only one `Serializer<T>`. Generic arguments of `T` are not taken into account.
-Currently, this package contains serializers for following types: `Array, (Mutable)List, ArrayList, (Mutable)Set, LinkedHashSet, (Mutable)Map, LinkedHashMap, Pair, Triple`; all primitive types.
-However, it is strongly discouraged to make user additions to this package.
+Serializers located in the `kotlinx.serialization.builtins` package can be automatically
+discovered by the plugin when there is no ambiguity, i.e. for a given `T` there is only one `Serializer<T>`. Generic arguments of `T` are not taken into account.
+Currently, this package contains serializers for the following types: `Array, (Mutable)List, ArrayList, (Mutable)Set, LinkedHashSet, (Mutable)Map, LinkedHashMap, Pair, Triple`; and all primitive types.
+It is strongly discouraged to make additions to this package.
 
 ### Auto-discovering user-defined external serializers
 
-To give compiler plugin a hint about external serializer, annotation `@Serializable(with: KClass<*>)` can be applied on property. However, it can be boilerplate-ish to annotate every property if you have a big number of domain classes which have to use, e.g. external serializer for `java.util.Date`.
-For this purpose, annotation `@Serializers(vararg s: Serializer<*>)` was introduced. It can be applied to a class or even to a file and adds given serializers to the scope of compiler plugin.
+To give the compiler plugin a hint about an external serializer, the annotation `@Serializable(with: KClass<*>)` can be applied on a property. However, it can be boilerplate-ish to annotate every property if you have a large number of domain classes which have to use, for example, an external serializer for `java.util.Date`.
+For this purpose, the annotation `@Serializers(vararg s: Serializer<*>)` was introduced. It can be applied to a class or even to a file, and adds given serializers to the scope of the compiler plugin.
 
 ### Tuning generated code
 
-To be more flexible and support various use-cases, plugin have to respect following annotations:
+To be more flexible and support the various use-cases, the plugin has to respect the following annotations:
 
-* `@SerialName`, which alters name of property or class written to metadata in descriptor. Can also be applicable to enum cases.
-* `@Optional`, which allows property to be absent in the decoder input. Requires default value on property. By default, all properties are required (even with default values).
-* `@Transient`, which makes property invisible for plugin.
-* `@SerialInfo`, which allows to create custom annotations with metadata and record them in the descriptor.
+* `@SerialName`, which alters the name of a property or class that has been written to metadata in the descriptor. It can also be applicable to enum cases.
+* `@Optional`, which allows a property to be absent in the decoder input. Requires a default value on the property. By default, all properties are required (even with default values).
+* `@Transient`, which makes the property invisible to the plugin.
+* `@SerialInfo`, which allows the creation of custom annotations with metadata, and to record them in the descriptor.
 
 ## Pre-designed use-cases
 
-### Saving schemas with descriptor
+### Saving schemas with a descriptor
 
-Serial descriptors have some important features. One of them is that they must provide access to all elements' descriptors via `getElementDescriptor`, giving us possibility to look on them as on tree-like structure. This allows schema traversing and saving. Using that information, descriptors must provide correct `equals` and `hashCode`, giving us a feature to cache schema in a hashmap once it's computed.
+Serial descriptors have some important features. One of them is that they must provide access to all the elements' descriptors via `getElementDescriptor`, giving us the possibility to view them as a tree-like structure. This allows schema traversing and saving. Using knowledge about its children, the descriptor must provide the correct `equals` and `hashCode`, giving us a feature to cache the schema in a hashmap once it's computed.
 
 ### Optionality in details
 
-Handling optional properties during deserialization is easy – compiler just generates bit mask for validation, similar to how default values in functions are compiled. However, one of the most popular feature request for library was omitting default values during serialization. For this purpose, method `shouldEncodeElementDefault` in `CompositeEncoder` was introduced. For every optional property, compiler emits following construction:
+Handling optional properties during deserialization is easy – the compiler plugin just generates a bit mask for validation, similar to how default values in functions are compiled. However, one of the most popular feature requests for the library was omitting default values during serialization. For this purpose, the method `shouldEncodeElementDefault` was introduced in `CompositeEncoder`. For every optional property, the compiler plugin emits the following construction:
 
 ```kotlin
-// let's say we recording "i" from following class definition:
+// Assume we are recording "i" from the following class definition:
 // @Serializable class Data(val s: String, @Optional val i: Int = 42)
 if (obj.i == 42 && output.shouldEncodeElementDefault(this.descriptor, 1))
     output.encodeIntElement(this.descriptor, 1, obj.i)
 ```
 
-With this code, decision whether to encode default value is passed to encoder and therefore to its storage format. Some formats may have this setting as boolean option (e.g. JSON), some formats always need value (e.g. hasher), some of them will rely on additional information in descriptor to make this decision.
+With this code, the decision whether to encode a default value is passed to the encoder and therefore to its storage format. Some formats may have this setting as a boolean option (e.g. JSON), some formats always need a value (e.g. hasher), while some of them will rely on additional information in the descriptor to make this decision.
 
 ### Reading values twice — updating, overwriting or banning
 
-To ease detection of element duplicates in input stream, method `CompositeDecoder.decodeElementAgain` is provided. This method servers purely indicating purposes and can't alter other calls to decoder or skip them.
-To abort the process, decoder implementation can throw an exception. If implementation supports overwrite/merge, it is ok to do nothing.
-If this method returns normally, deserialization process 
-continues as usual (including calling decodeSomething with given index). 
-Primitives can't be merged and therefore they are overwritten by consequent calls to decodeSomething. Complex values are decoded via `decodeSerializableElement(desc: SerialDescriptor, index: Int, strategy: DeserializationStrategy<T>, oldValue: T?, wasRead: Boolean)` and it's implementation burden to analyze `wasRead` flag and decide whether to use `oldValue` to merge it with current stream via passing it to corresponding `.deserialize()` or to just ignore it.
+To ease the detection of element duplicates in the input stream, the method `CompositeDecoder.decodeElementAgain` is provided. This method serves purely for indicating purposes and can't alter other calls to the decoder or skip them.
+To abort the process, the decoder implementation can throw an exception. If the implementation supports overwrite/merge, it is ok to do nothing.
+If this method returns normally, the deserialization process continues as usual (including calling decodeSomething with the given index). 
+Primitives can't be merged, and therefore they are overwritten by consequent calls to decodeSomething. Complex values are decoded via `decodeSerializableElement(desc: SerialDescriptor, index: Int, strategy: DeserializationStrategy<T>, oldValue: T?, wasRead: Boolean)` and it is an implementation burden to analyze the `wasRead` flag. Then the implementation can decide whether to use `oldValue` to merge it with the current stream via passing it to the corresponding `.deserialize()` call or to just ignore it.
 
 ### Contextual serialization
 
-By default, all serializers are resolved by plugin statically when compiling serializable class. This gives us type-safety, performance and eliminates reflection usage to minimum. However, in certain cases one may want to delay serializers resolving to runtime. One of such cases is where you want to define two different serializers for different formats, say serializing `Date` differently in JSON and XML. To support such cases, a concepts of `SerialContext` and `ContextSerializer` were introduced. Roughly speaking, it's a map where runtime part of framework is looking for serializers if they weren't resolved at compile time by plugin.
+By default, all serializers are resolved by the plugin statically when compiling the serializable class. This gives us type-safety and performance, and reduces reflection usage to a minimum. However, in certain cases, it is possible to delay the resolving of serializers until runtime. One possible case is when you want to define two different serializers for different formats, e.g. serializing `Date` differently in JSON and in XML. To support such cases, the concepts of `SerialContext` and `ContextSerializer` were introduced. Roughly speaking, it's a map where the runtime part of the framework is looking for serializers if they weren't resolved at compile time by the plugin.
 
-To enable its usage, annotate property with `@SerializableWith(ContextSerializer::class)` or `@ContextualSerialization`. Latter annotation can also be applied at file-level in form `@ContextualSerialization(vararg classes: KClass)`. `ContextSerializer` captures `KClass` of the property and later looks for assigned to it serializer.
+To enable this mapping, annotate the property with `@SerializableWith(ContextSerializer::class)` or `@ContextualSerialization`. The latter annotation can also be applied at the file level in the form `@ContextualSerialization(vararg classes: KClass)`. `ContextSerializer` captures the `KClass` of the property and later looks for the assigned serializer.
 
-`SerialContext` is available as `val context` in encoders and decoders. It contains function `.getContextualSerializer(forClass: KClass)` which is used by `ContextSerializer`. However, it does not contain functions to register serializers.
+`SerialContext` is available as `val context` in the encoders and decoders. It contains the function `.getContextualSerializer(forClass: KClass)` which is used by `ContextSerializer`. However, it does not contain the functions to register serializers.
 
-`interface MutableSerialContext : SerialContext` can be exposed by high-level abstractions (e.g. concrete JSON format, which can encapsulate a bunch of encoders) and provides ability to correctly register all serializers. 
+`interface MutableSerialContext : SerialContext` can be exposed by high-level abstractions (e.g. concrete JSON format, which can encapsulate a bunch of encoders) and provides an ability to correctly register all the serializers. 
 
-These concepts will be described more precisely in runtime library's documentation.
+These concepts will be described more precisely in the runtime library documentation.
 
 ### Polymorphism
 
-Usually, polymorphism usage in serialization is discouraged due to its security problems. But writing complex business logic is almost impossible without this main OOP feature.
-In our design for this framework, we've tried to get rid of 'deserialize-anything' problem by several requirements. First of them is that all serializable implementations of some abstract class must be registered in advance. It also helps to remove reflection usage, such as `Class.forName`, that made polymorphism unavailable on Kotlin/JS.
-This is more permissive approach than 'bounded polymorphism' described in section next to `SerialKind.SEALED`, because it allows registering subclasses in runtime, not compile-time. For example, it allows to add to registry additional subclasses that were defined in separate module, dependent on base one with base class.
+Usually, polymorphism usage in serialization is discouraged because of the security problems it entails. However, writing complex business logic is almost impossible without this main OOP feature.
+In our design for this framework, we've tried to get rid of the 'deserialize-anything' problem with the help of several requirements. The first such requirement is that all serializable implementations of some abstract class must be registered in advance. This also helps to remove reflection usage, such as `Class.forName`, which made polymorphism unavailable on Kotlin/JS.
+This is a more permissive approach than the 'bounded polymorphism' approach described in the section next to `SerialKind.SEALED`, because it allows registering subclasses in runtime, not compile-time. For example, it allows adding additional subclasses to the registry that were defined in a separate module, dependent on the base module with the base class.
 
-Role of such registry can be taken by already discussed `SerialContext`. This also limits which polymorphic classes can be deserialized by which formats/wires.
+The role of such a registry can be taken over by `SerialContext` discussed above. This also limits which polymorphic classes can be deserialized by which formats/wires.
 
-Polymorphic serialization never enables automatically. To enable this feature, use `@SerializableWith(PolymorphicSerializer::class)` or just `@Polymorphic` on property.
+Polymorphic serialization is never enabled automatically. To enable this feature, use `@SerializableWith(PolymorphicSerializer::class)` or just `@Polymorphic` on the property.
 
-Another security limit here is we allow to register subclasses only in scope of some base class, called _basePolyType_. Motivation for this is easily understandable from the example:
+Another security limitation here is how we only allow registering the subclasses in the scope of a base class called _basePolyType_. The motivation for this is easily understandable from the example:
 
 ```kotlin
 abstract class BaseRequest()
@@ -415,20 +414,20 @@ abstract class BaseResponse()
 )
 ```
 
-In this example both `request` and `response` in `Message` are serializable with `PolymorphicSerializer` due to annotation on them; `BaseRequest` and `BaseResponse` became _basePolyType_ s. (they are not required to be serializable by themselves).
-Yet `PolymorphicSerializer` for `request` should only contain mappings to `RequestA` and `RequestB` serializers, and none of response's serializers. This is achieved through special form of `registerPolymorphicSerializer` function, which accepts two kClasses: `registerPolymorphicSerializer(basePolyType: KClass, concreteClass: KClass, serializer: Serializer = concreteClass.serializer())`.
+In this example, both `request` and `response` in `Message` are serializable with `PolymorphicSerializer` because of the annotation on them; `BaseRequest` and `BaseResponse` became _basePolyType_ s. (They are not required to be serializable by themselves.)
+Yet `PolymorphicSerializer` for `request` should only contain mappings to `RequestA` and `RequestB` serializers, and none of the response's serializers. This is achieved through a special form of `registerPolymorphicSerializer` function, which accepts two kClasses: `registerPolymorphicSerializer(basePolyType: KClass, concreteClass: KClass, serializer: Serializer = concreteClass.serializer())`.
 
-For details about registering and usage of pre-defined _modules_, consult library's documentation.
+For details about registering and using pre-defined _modules_, please refer to the library's documentation.
 
-## Open for discussion issues
+## Issues open for discussion
 
-* `SerializationStrategy` and `DeserializationStrategy` aren't used as widely as `Serializer`, but still those names are long and cumbersome.
-* It may be not clear that `Serializer` can do both serialization and deserialization. Maybe we need better name?
-* Should user have an ability to manipulate layout and order of calls to encoder from generated code? [#121](https://github.com/Kotlin/kotlinx.serialization/issues/121)
-* Should `@Optional` annotation be applied automatically when property has default value? [#19](https://github.com/Kotlin/kotlinx.serialization/issues/19)
-* Should primitive arrays (ByteArray etc) be treated specially by plugin or should it be burden of format implementation to handle them? [#52](https://github.com/Kotlin/kotlinx.serialization/issues/52)
+* `SerializationStrategy` and `DeserializationStrategy` aren't used as widely as `Serializer`, but those names are long and cumbersome.
+* It may not be clear that a `Serializer` can do both serialization and deserialization. Do we need a better name?
+* Should the user be able to manipulate layout and order of calls to the encoder from generated code? [#121](https://github.com/Kotlin/kotlinx.serialization/issues/121)
+* Should `@Optional` annotation be applied automatically when a property has a default value? [#19](https://github.com/Kotlin/kotlinx.serialization/issues/19)
+* Should primitive arrays (ByteArray etc.) be treated specially by the plugin, or should the burden of handling them be borne by format implementation? [#52](https://github.com/Kotlin/kotlinx.serialization/issues/52)
 * How to support different class name representations for different formats in polymorphism? [#168](https://github.com/Kotlin/kotlinx.serialization/issues/168)
-* Should polymorphic serializer omit class name in trivial cases (primitives) and how to implement this? [#40](https://github.com/Kotlin/kotlinx.serialization/issues/40)
+* Should a polymorphic serializer omit class names in trivial cases (primitives), and how to implement this? [#40](https://github.com/Kotlin/kotlinx.serialization/issues/40)
 
 ## Future work
 
